@@ -99,35 +99,66 @@ public:
 	NineConnection &Conn() const;
 
 	status_t ReadStat(struct stat &stat);
+	status_t WriteStat(const struct stat &stat, uint32 statMask);
 	status_t GetVnodeName(char *buffer, size_t bufferSize);
 	status_t Access(int mode);
+
+	// Hook so a size change from write_stat (truncate) can resize a file cache.
+	virtual void OnSizeChanged(off_t newSize) {}
 
 	virtual status_t Lookup(const char *name, ino_t &id);
 	virtual status_t Open(int openMode, NinePFileCookie *&cookie);
 	virtual status_t Close(NinePFileCookie *cookie);
 	virtual status_t FreeCookie(NinePFileCookie *cookie);
 	virtual status_t Read(NinePFileCookie *cookie, off_t pos, void *buffer, size_t &length);
+	virtual status_t Write(NinePFileCookie *cookie, off_t pos, const void *buffer, size_t &length);
 	virtual status_t OpenDir(NinePDirCookie *&cookie);
 	virtual status_t CloseDir(NinePDirCookie *cookie);
 	virtual status_t FreeDirCookie(NinePDirCookie *cookie);
 	virtual status_t ReadDir(NinePDirCookie *cookie, struct dirent *buffer, size_t bufferSize, uint32 &num);
 	virtual status_t RewindDir(NinePDirCookie *cookie);
 	virtual status_t ReadSymlink(char *buffer, size_t &bufferSize);
+	virtual status_t Create(const char *name, int openMode, int perms, NinePFileCookie *&cookie, ino_t &newVnodeID);
+	virtual status_t CreateDir(const char *name, int perms);
+	virtual status_t CreateSymlink(const char *name, const char *path, int mode);
+	virtual status_t Unlink(const char *name);
+	virtual status_t RemoveDir(const char *name);
+	virtual status_t Rename(const char *fromName, NinePVnode *toDir, const char *toName);
 };
 
 
 class NinePFileVnode: public NinePVnode {
+private:
+	void *fFileCache = nullptr;
+	uint32 fCacheFid = kNineNoFid;
+	off_t fCacheSize = 0;
+
+	// Lazily creates the page cache and a dedicated opened fid for page I/O,
+	// so mmap and executable loading work. Safe to call repeatedly.
+	status_t EnsureCache();
+
 public:
 	using NinePVnode::NinePVnode;
+	~NinePFileVnode();
 
 	status_t Open(int openMode, NinePFileCookie *&cookie) final;
 	status_t Close(NinePFileCookie *cookie) final;
 	status_t FreeCookie(NinePFileCookie *cookie) final;
 	status_t Read(NinePFileCookie *cookie, off_t pos, void *buffer, size_t &length) final;
+	status_t Write(NinePFileCookie *cookie, off_t pos, const void *buffer, size_t &length) final;
+	void OnSizeChanged(off_t newSize) final;
+
+	status_t ReadPages(off_t pos, const struct iovec *vecs, size_t count, size_t &numBytes);
+	status_t WritePages(off_t pos, const struct iovec *vecs, size_t count, size_t &numBytes);
 };
 
 
 class NinePDirVnode: public NinePVnode {
+private:
+	// Walks name to obtain the child's inode number (for notifications and
+	// vnode removal), leaving no lingering fid.
+	status_t ResolveChild(const char *name, ino_t &id);
+
 public:
 	using NinePVnode::NinePVnode;
 
@@ -137,6 +168,12 @@ public:
 	status_t FreeDirCookie(NinePDirCookie *cookie) final;
 	status_t ReadDir(NinePDirCookie *cookie, struct dirent *buffer, size_t bufferSize, uint32 &num) final;
 	status_t RewindDir(NinePDirCookie *cookie) final;
+	status_t Create(const char *name, int openMode, int perms, NinePFileCookie *&cookie, ino_t &newVnodeID) final;
+	status_t CreateDir(const char *name, int perms) final;
+	status_t CreateSymlink(const char *name, const char *path, int mode) final;
+	status_t Unlink(const char *name) final;
+	status_t RemoveDir(const char *name) final;
+	status_t Rename(const char *fromName, NinePVnode *toDir, const char *toName) final;
 };
 
 
@@ -181,3 +218,4 @@ public:
 
 
 int NineTypeToStatType(uint8 qidType);
+uint32 NineHaikuToLinuxOpenFlags(int openMode);

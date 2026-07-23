@@ -51,4 +51,14 @@ public:
 	status_t ReadDir(uint32 fid, uint64 offset, uint32 count, void *buffer, uint32 &outLength);
 	status_t ReadLink(uint32 fid, char *buffer, size_t bufferSize);
 	status_t Clunk(uint32 fid);
+
+	// 9P2000.L mutations. Lcreate creates a file in the directory fid and leaves
+	// fid open on the new file (returning its iounit).
+	status_t Lcreate(uint32 fid, const char *name, uint32 flags, uint32 mode, uint32 gid, NineQid &outQid, uint32 &outIounit);
+	status_t Mkdir(uint32 dirFid, const char *name, uint32 mode, uint32 gid, NineQid &outQid);
+	status_t Symlink(uint32 dirFid, const char *name, const char *target, uint32 gid, NineQid &outQid);
+	status_t UnlinkAt(uint32 dirFid, const char *name, uint32 flags);
+	status_t RenameAt(uint32 oldDirFid, const char *oldName, uint32 newDirFid, const char *newName);
+	status_t SetAttr(uint32 fid, uint32 valid, uint32 mode, uint32 uid, uint32 gid, uint64 size, int64 atimeSec, int64 atimeNsec, int64 mtimeSec, int64 mtimeNsec);
+	status_t Write(uint32 fid, uint64 offset, uint32 count, const void *buffer, uint32 &outCount);
 };

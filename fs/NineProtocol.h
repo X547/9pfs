@@ -66,6 +66,26 @@ enum {
 };
 
 
+// Tsetattr valid bits.
+enum {
+	kNineSetattrMode     = 0x00000001,
+	kNineSetattrUid      = 0x00000002,
+	kNineSetattrGid      = 0x00000004,
+	kNineSetattrSize     = 0x00000008,
+	kNineSetattrAtime    = 0x00000010,
+	kNineSetattrMtime    = 0x00000020,
+	kNineSetattrCtime    = 0x00000040,
+	kNineSetattrAtimeSet = 0x00000080,
+	kNineSetattrMtimeSet = 0x00000100,
+};
+
+
+// Tunlinkat flags (Linux AT_REMOVEDIR).
+enum {
+	kNineAtRemoveDir = 0x200,
+};
+
+
 struct NineQid {
 	uint8 type;
 	uint32 version;

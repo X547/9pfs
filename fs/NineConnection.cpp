@@ -404,3 +404,178 @@ status_t NineConnection::Clunk(uint32 fid)
 	NineReader r(&fRecvBuf[0], rlen);
 	return CheckReply(r, NineType::Rclunk);
 }
+
+
+//#pragma mark - mutations
+
+status_t NineConnection::Lcreate(uint32 fid, const char *name, uint32 flags,
+	uint32 mode, uint32 gid, NineQid &outQid, uint32 &outIounit)
+{
+	MutexLocker locker(&fLock);
+
+	NineWriter w(&fSendBuf[0], fMsize, NineType::Tlcreate, 0);
+	w.PutU32(fid);
+	w.PutString(name);
+	w.PutU32(flags);
+	w.PutU32(mode);
+	w.PutU32(gid);
+	size_t tlen = w.Finish();
+	if (tlen == 0)
+		return B_BUFFER_OVERFLOW;
+
+	size_t rlen;
+	CHECK_RET(Transceive(tlen, rlen));
+
+	NineReader r(&fRecvBuf[0], rlen);
+	CHECK_RET(CheckReply(r, NineType::Rlcreate));
+
+	r.GetQid(outQid);
+	outIounit = r.GetU32();
+	return r.Ok() ? B_OK : B_IO_ERROR;
+}
+
+
+status_t NineConnection::Mkdir(uint32 dirFid, const char *name, uint32 mode,
+	uint32 gid, NineQid &outQid)
+{
+	MutexLocker locker(&fLock);
+
+	NineWriter w(&fSendBuf[0], fMsize, NineType::Tmkdir, 0);
+	w.PutU32(dirFid);
+	w.PutString(name);
+	w.PutU32(mode);
+	w.PutU32(gid);
+	size_t tlen = w.Finish();
+	if (tlen == 0)
+		return B_BUFFER_OVERFLOW;
+
+	size_t rlen;
+	CHECK_RET(Transceive(tlen, rlen));
+
+	NineReader r(&fRecvBuf[0], rlen);
+	CHECK_RET(CheckReply(r, NineType::Rmkdir));
+
+	r.GetQid(outQid);
+	return r.Ok() ? B_OK : B_IO_ERROR;
+}
+
+
+status_t NineConnection::Symlink(uint32 dirFid, const char *name,
+	const char *target, uint32 gid, NineQid &outQid)
+{
+	MutexLocker locker(&fLock);
+
+	NineWriter w(&fSendBuf[0], fMsize, NineType::Tsymlink, 0);
+	w.PutU32(dirFid);
+	w.PutString(name);
+	w.PutString(target);
+	w.PutU32(gid);
+	size_t tlen = w.Finish();
+	if (tlen == 0)
+		return B_BUFFER_OVERFLOW;
+
+	size_t rlen;
+	CHECK_RET(Transceive(tlen, rlen));
+
+	NineReader r(&fRecvBuf[0], rlen);
+	CHECK_RET(CheckReply(r, NineType::Rsymlink));
+
+	r.GetQid(outQid);
+	return r.Ok() ? B_OK : B_IO_ERROR;
+}
+
+
+status_t NineConnection::UnlinkAt(uint32 dirFid, const char *name, uint32 flags)
+{
+	MutexLocker locker(&fLock);
+
+	NineWriter w(&fSendBuf[0], fMsize, NineType::Tunlinkat, 0);
+	w.PutU32(dirFid);
+	w.PutString(name);
+	w.PutU32(flags);
+	size_t tlen = w.Finish();
+	if (tlen == 0)
+		return B_BUFFER_OVERFLOW;
+
+	size_t rlen;
+	CHECK_RET(Transceive(tlen, rlen));
+
+	NineReader r(&fRecvBuf[0], rlen);
+	return CheckReply(r, NineType::Runlinkat);
+}
+
+
+status_t NineConnection::RenameAt(uint32 oldDirFid, const char *oldName,
+	uint32 newDirFid, const char *newName)
+{
+	MutexLocker locker(&fLock);
+
+	NineWriter w(&fSendBuf[0], fMsize, NineType::Trenameat, 0);
+	w.PutU32(oldDirFid);
+	w.PutString(oldName);
+	w.PutU32(newDirFid);
+	w.PutString(newName);
+	size_t tlen = w.Finish();
+	if (tlen == 0)
+		return B_BUFFER_OVERFLOW;
+
+	size_t rlen;
+	CHECK_RET(Transceive(tlen, rlen));
+
+	NineReader r(&fRecvBuf[0], rlen);
+	return CheckReply(r, NineType::Rrenameat);
+}
+
+
+status_t NineConnection::SetAttr(uint32 fid, uint32 valid, uint32 mode,
+	uint32 uid, uint32 gid, uint64 size, int64 atimeSec, int64 atimeNsec,
+	int64 mtimeSec, int64 mtimeNsec)
+{
+	MutexLocker locker(&fLock);
+
+	NineWriter w(&fSendBuf[0], fMsize, NineType::Tsetattr, 0);
+	w.PutU32(fid);
+	w.PutU32(valid);
+	w.PutU32(mode);
+	w.PutU32(uid);
+	w.PutU32(gid);
+	w.PutU64(size);
+	w.PutU64((uint64)atimeSec);
+	w.PutU64((uint64)atimeNsec);
+	w.PutU64((uint64)mtimeSec);
+	w.PutU64((uint64)mtimeNsec);
+	size_t tlen = w.Finish();
+	if (tlen == 0)
+		return B_BUFFER_OVERFLOW;
+
+	size_t rlen;
+	CHECK_RET(Transceive(tlen, rlen));
+
+	NineReader r(&fRecvBuf[0], rlen);
+	return CheckReply(r, NineType::Rsetattr);
+}
+
+
+status_t NineConnection::Write(uint32 fid, uint64 offset, uint32 count,
+	const void *buffer, uint32 &outCount)
+{
+	MutexLocker locker(&fLock);
+
+	NineWriter w(&fSendBuf[0], fMsize, NineType::Twrite, 0);
+	w.PutU32(fid);
+	w.PutU64(offset);
+	w.PutU32(count);
+	w.PutData(buffer, count);
+	size_t tlen = w.Finish();
+	if (tlen == 0)
+		return B_BUFFER_OVERFLOW;
+
+	size_t rlen;
+	CHECK_RET(Transceive(tlen, rlen));
+
+	NineReader r(&fRecvBuf[0], rlen);
+	CHECK_RET(CheckReply(r, NineType::Rwrite));
+
+	outCount = r.GetU32();
+	return r.Ok() ? B_OK : B_IO_ERROR;
+}

@@ -3,6 +3,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <NodeMonitor.h>
 
 #include <util/AutoLock.h>
 
@@ -197,5 +198,229 @@ status_t NinePDirVnode::RewindDir(NinePDirCookie *cookie)
 	cookie->chunkLength = 0;
 	cookie->chunkPos = 0;
 	cookie->eof = false;
+	return B_OK;
+}
+
+
+//#pragma mark - mutations
+
+// New nodes are created on the host with group 0; QEMU maps ownership per its
+// security model, and the caller-visible owner is the host's.
+static const uint32 kNineCreateGid = 0;
+
+
+status_t NinePDirVnode::ResolveChild(const char *name, ino_t &id)
+{
+	uint32 probeFid;
+	if (!Conn().AllocFid(probeFid))
+		return B_NO_MEMORY;
+
+	NineQid qid;
+	status_t status = Conn().Walk(Fid(), probeFid, name, qid);
+	if (status < B_OK) {
+		Conn().FreeFid(probeFid);
+		return status;
+	}
+
+	id = (ino_t)qid.path;
+	Conn().Clunk(probeFid);
+	Conn().FreeFid(probeFid);
+	return B_OK;
+}
+
+
+status_t NinePDirVnode::Create(const char *name, int openMode, int perms,
+	NinePFileCookie *&cookie, ino_t &newVnodeID)
+{
+	uint32 probeFid;
+	if (!Conn().AllocFid(probeFid))
+		return B_NO_MEMORY;
+
+	NineQid qid;
+	status_t walkStatus = Conn().Walk(Fid(), probeFid, name, qid);
+
+	if (walkStatus == B_OK) {
+		// The entry already exists.
+		if ((openMode & O_EXCL) != 0) {
+			Conn().Clunk(probeFid);
+			Conn().FreeFid(probeFid);
+			return B_FILE_EXISTS;
+		}
+
+		ino_t id = (ino_t)qid.path;
+		NinePVnode *vnode;
+		{
+			RecursiveLocker lock(Volume()->Lock());
+			NinePVnode *existing = Volume()->FindVnode(id);
+			if (existing != nullptr) {
+				Conn().Clunk(probeFid);
+				Conn().FreeFid(probeFid);
+				vnode = existing;
+			} else {
+				vnode = Volume()->GetOrCreateVnode(qid, probeFid, name);
+				if (vnode == nullptr) {
+					Conn().Clunk(probeFid);
+					Conn().FreeFid(probeFid);
+					return B_NO_MEMORY;
+				}
+			}
+		}
+		CHECK_RET(get_vnode(Volume()->Base(), id, NULL));
+		status_t status = vnode->Open(openMode, cookie);
+		if (status < B_OK) {
+			put_vnode(Volume()->Base(), id);
+			return status;
+		}
+		newVnodeID = id;
+		return B_OK;
+	}
+
+	if (walkStatus != B_ENTRY_NOT_FOUND) {
+		Conn().FreeFid(probeFid);
+		return walkStatus;
+	}
+	Conn().FreeFid(probeFid);
+
+	// The entry does not exist: create and open it. Tlcreate leaves createFid
+	// open on the new file; a second walk yields the unopened vnode fid.
+	uint32 createFid;
+	if (!Conn().AllocFid(createFid))
+		return B_NO_MEMORY;
+	status_t status = Conn().WalkClone(Fid(), createFid);
+	if (status < B_OK) {
+		Conn().FreeFid(createFid);
+		return status;
+	}
+
+	NineQid newQid;
+	uint32 iounit;
+	status = Conn().Lcreate(createFid, name, NineHaikuToLinuxOpenFlags(openMode),
+		perms & 07777, kNineCreateGid, newQid, iounit);
+	if (status < B_OK) {
+		Conn().Clunk(createFid);
+		Conn().FreeFid(createFid);
+		return status;
+	}
+
+	uint32 vnodeFid;
+	if (!Conn().AllocFid(vnodeFid)) {
+		Conn().Clunk(createFid);
+		Conn().FreeFid(createFid);
+		return B_NO_MEMORY;
+	}
+	NineQid vnodeQid;
+	status = Conn().Walk(Fid(), vnodeFid, name, vnodeQid);
+	if (status < B_OK) {
+		Conn().FreeFid(vnodeFid);
+		Conn().Clunk(createFid);
+		Conn().FreeFid(createFid);
+		return status;
+	}
+
+	newVnodeID = (ino_t)newQid.path;
+	{
+		RecursiveLocker lock(Volume()->Lock());
+		if (Volume()->FindVnode(newVnodeID) != nullptr) {
+			Conn().Clunk(vnodeFid);
+			Conn().FreeFid(vnodeFid);
+		} else if (Volume()->GetOrCreateVnode(vnodeQid, vnodeFid, name) == nullptr) {
+			Conn().Clunk(vnodeFid);
+			Conn().FreeFid(vnodeFid);
+			Conn().Clunk(createFid);
+			Conn().FreeFid(createFid);
+			return B_NO_MEMORY;
+		}
+	}
+
+	status = get_vnode(Volume()->Base(), newVnodeID, NULL);
+	if (status < B_OK) {
+		Conn().Clunk(createFid);
+		Conn().FreeFid(createFid);
+		return status;
+	}
+
+	cookie = new(std::nothrow) NinePFileCookie();
+	if (cookie == nullptr) {
+		Conn().Clunk(createFid);
+		Conn().FreeFid(createFid);
+		put_vnode(Volume()->Base(), newVnodeID);
+		return B_NO_MEMORY;
+	}
+	cookie->openFid = createFid;
+	cookie->iounit = iounit;
+
+	notify_entry_created(Volume()->Id(), Id(), name, newVnodeID);
+	return B_OK;
+}
+
+
+status_t NinePDirVnode::CreateDir(const char *name, int perms)
+{
+	NineQid qid;
+	CHECK_RET(Conn().Mkdir(Fid(), name, perms & 07777, kNineCreateGid, qid));
+	notify_entry_created(Volume()->Id(), Id(), name, (ino_t)qid.path);
+	return B_OK;
+}
+
+
+status_t NinePDirVnode::CreateSymlink(const char *name, const char *path, int mode)
+{
+	NineQid qid;
+	CHECK_RET(Conn().Symlink(Fid(), name, path, kNineCreateGid, qid));
+	notify_entry_created(Volume()->Id(), Id(), name, (ino_t)qid.path);
+	return B_OK;
+}
+
+
+status_t NinePDirVnode::Unlink(const char *name)
+{
+	ino_t id;
+	CHECK_RET(ResolveChild(name, id));
+
+	CHECK_RET(Conn().UnlinkAt(Fid(), name, 0));
+
+	// Mark a resident vnode removed so VFS tears it down (via remove_vnode) when
+	// its last reference drops. get_vnode reinstantiates from fIds; a node that
+	// was never resident simply isn't there and needs no teardown.
+	if (get_vnode(Volume()->Base(), id, NULL) == B_OK) {
+		remove_vnode(Volume()->Base(), id);
+		put_vnode(Volume()->Base(), id);
+	}
+	notify_entry_removed(Volume()->Id(), Id(), name, id);
+	return B_OK;
+}
+
+
+status_t NinePDirVnode::RemoveDir(const char *name)
+{
+	ino_t id;
+	CHECK_RET(ResolveChild(name, id));
+
+	CHECK_RET(Conn().UnlinkAt(Fid(), name, kNineAtRemoveDir));
+
+	if (get_vnode(Volume()->Base(), id, NULL) == B_OK) {
+		remove_vnode(Volume()->Base(), id);
+		put_vnode(Volume()->Base(), id);
+	}
+	notify_entry_removed(Volume()->Id(), Id(), name, id);
+	return B_OK;
+}
+
+
+status_t NinePDirVnode::Rename(const char *fromName, NinePVnode *toDir,
+	const char *toName)
+{
+	ino_t id;
+	CHECK_RET(ResolveChild(fromName, id));
+
+	CHECK_RET(Conn().RenameAt(Fid(), fromName, toDir->Fid(), toName));
+
+	{
+		RecursiveLocker lock(Volume()->Lock());
+		NinePVnode *vnode = Volume()->FindVnode(id);
+		if (vnode != nullptr)
+			vnode->SetName(toName);
+	}
+	notify_entry_moved(Volume()->Id(), Id(), fromName, toDir->Id(), toName, id);
 	return B_OK;
 }

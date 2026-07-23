@@ -35,8 +35,24 @@ static fs_vnode_ops sVnodeOps = {
 		return (status_t)B_OK;
 	},
 
+	.read_pages = [](fs_volume *volume, fs_vnode *vnode, void *cookie, off_t pos, const struct iovec *vecs, size_t count, size_t *numBytes) {
+		return static_cast<NinePFileVnode*>(vnode->private_node)->ReadPages(pos, vecs, count, *numBytes);
+	},
+	.write_pages = [](fs_volume *volume, fs_vnode *vnode, void *cookie, off_t pos, const struct iovec *vecs, size_t count, size_t *numBytes) {
+		return static_cast<NinePFileVnode*>(vnode->private_node)->WritePages(pos, vecs, count, *numBytes);
+	},
+
 	.read_symlink = [](fs_volume *volume, fs_vnode *link, char *buffer, size_t *bufferSize) {
 		return static_cast<NinePVnode*>(link->private_node)->ReadSymlink(buffer, *bufferSize);
+	},
+	.create_symlink = [](fs_volume *volume, fs_vnode *dir, const char *name, const char *path, int mode) {
+		return static_cast<NinePVnode*>(dir->private_node)->CreateSymlink(name, path, mode);
+	},
+	.unlink = [](fs_volume *volume, fs_vnode *dir, const char *name) {
+		return static_cast<NinePVnode*>(dir->private_node)->Unlink(name);
+	},
+	.rename = [](fs_volume *volume, fs_vnode *fromDir, const char *fromName, fs_vnode *toDir, const char *toName) {
+		return static_cast<NinePVnode*>(fromDir->private_node)->Rename(fromName, static_cast<NinePVnode*>(toDir->private_node), toName);
 	},
 	.access = [](fs_volume *volume, fs_vnode *vnode, int mode) {
 		return static_cast<NinePVnode*>(vnode->private_node)->Access(mode);
@@ -44,7 +60,13 @@ static fs_vnode_ops sVnodeOps = {
 	.read_stat = [](fs_volume *volume, fs_vnode *vnode, struct stat *stat) {
 		return static_cast<NinePVnode*>(vnode->private_node)->ReadStat(*stat);
 	},
+	.write_stat = [](fs_volume *volume, fs_vnode *vnode, const struct stat *stat, uint32 statMask) {
+		return static_cast<NinePVnode*>(vnode->private_node)->WriteStat(*stat, statMask);
+	},
 
+	.create = [](fs_volume *volume, fs_vnode *dir, const char *name, int openMode, int perms, void **cookie, ino_t *newVnodeID) {
+		return static_cast<NinePVnode*>(dir->private_node)->Create(name, openMode, perms, *(NinePFileCookie**)cookie, *newVnodeID);
+	},
 	.open = [](fs_volume *volume, fs_vnode *vnode, int openMode, void **cookie) {
 		return static_cast<NinePVnode*>(vnode->private_node)->Open(openMode, *(NinePFileCookie**)cookie);
 	},
@@ -56,6 +78,16 @@ static fs_vnode_ops sVnodeOps = {
 	},
 	.read = [](fs_volume *volume, fs_vnode *vnode, void *cookie, off_t pos, void *buffer, size_t *length) {
 		return static_cast<NinePVnode*>(vnode->private_node)->Read((NinePFileCookie*)cookie, pos, buffer, *length);
+	},
+	.write = [](fs_volume *volume, fs_vnode *vnode, void *cookie, off_t pos, const void *buffer, size_t *length) {
+		return static_cast<NinePVnode*>(vnode->private_node)->Write((NinePFileCookie*)cookie, pos, buffer, *length);
+	},
+
+	.create_dir = [](fs_volume *volume, fs_vnode *parent, const char *name, int perms) {
+		return static_cast<NinePVnode*>(parent->private_node)->CreateDir(name, perms);
+	},
+	.remove_dir = [](fs_volume *volume, fs_vnode *parent, const char *name) {
+		return static_cast<NinePVnode*>(parent->private_node)->RemoveDir(name);
 	},
 
 	.open_dir = [](fs_volume *volume, fs_vnode *vnode, void **cookie) {
