@@ -109,3 +109,14 @@ struct NineStat {
 	int64 ctimeSec;
 	int64 ctimeNsec;
 };
+
+
+// Decoded Rstatfs reply (only the fields 9pfs consumes).
+struct NineStatfs {
+	uint32 bsize;
+	uint64 blocks;
+	uint64 bfree;
+	uint64 bavail;
+	uint64 files;
+	uint64 ffree;
+};

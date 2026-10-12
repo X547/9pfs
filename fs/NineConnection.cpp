@@ -279,6 +279,35 @@ status_t NineConnection::GetAttr(uint32 fid, uint64 mask, NineStat &outStat)
 }
 
 
+status_t NineConnection::Statfs(uint32 fid, NineStatfs &outStatfs)
+{
+	MutexLocker locker(&fLock);
+
+	NineWriter w(&fSendBuf[0], fMsize, NineType::Tstatfs, 0);
+	w.PutU32(fid);
+	size_t tlen = w.Finish();
+	if (tlen == 0)
+		return B_BUFFER_OVERFLOW;
+
+	size_t rlen;
+	CHECK_RET(Transceive(tlen, rlen));
+
+	NineReader r(&fRecvBuf[0], rlen);
+	CHECK_RET(CheckReply(r, NineType::Rstatfs));
+
+	r.GetU32(); // type
+	outStatfs.bsize = r.GetU32();
+	outStatfs.blocks = r.GetU64();
+	outStatfs.bfree = r.GetU64();
+	outStatfs.bavail = r.GetU64();
+	outStatfs.files = r.GetU64();
+	outStatfs.ffree = r.GetU64();
+	r.GetU64(); // fsid
+	r.GetU32(); // namelen
+	return r.Ok() ? B_OK : B_IO_ERROR;
+}
+
+
 status_t NineConnection::Lopen(uint32 fid, uint32 flags, NineQid &outQid,
 	uint32 &outIounit)
 {

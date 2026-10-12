@@ -125,14 +125,13 @@ unmount /9p
 - Creating and removing files and directories, rename, unlink.
 - Symlinks: reading and creation.
 - Changing attributes via `write_stat` (mode, size, times).
+- Volume size and free space from the server (`statfs`).
 
 ## Limitations
 
 - 9P2000.L only. A server that negotiates a different version is rejected during
   `Tversion`.
 - Hard links are not implemented.
-- No `statfs`: total/free space is reported as a fixed placeholder, free space as
-  zero.
 - No BFS extras — attributes, indices and queries are not supported.
 - `msize` is fixed at 8 KiB by the transport, and the transport serializes one
   outstanding request at a time with a 10 second reply timeout.

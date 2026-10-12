@@ -46,6 +46,7 @@ public:
 	status_t WalkClone(uint32 fid, uint32 newFid);
 	status_t Walk(uint32 fid, uint32 newFid, const char *name, NineQid &outQid);
 	status_t GetAttr(uint32 fid, uint64 mask, NineStat &outStat);
+	status_t Statfs(uint32 fid, NineStatfs &outStatfs);
 	status_t Lopen(uint32 fid, uint32 flags, NineQid &outQid, uint32 &outIounit);
 	status_t Read(uint32 fid, uint64 offset, uint32 count, void *buffer, uint32 &outCount);
 	status_t ReadDir(uint32 fid, uint64 offset, uint32 count, void *buffer, uint32 &outLength);

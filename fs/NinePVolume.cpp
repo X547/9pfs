@@ -135,11 +135,27 @@ status_t NinePVolume::ReadFsInfo(struct fs_info &info)
 		.flags = B_FS_IS_SHARED | B_FS_IS_PERSISTENT,
 		.block_size = 512,
 		.io_size = (off_t)fConn.Msize(),
+		// Without an answer from the server, report a huge volume with all of
+		// it free, so that copying to it is not refused.
 		.total_blocks = INT64_MAX / 512,
-		.free_blocks = 0,
+		.free_blocks = INT64_MAX / 512,
 		.total_nodes = INT64_MAX,
-		.free_nodes = 0,
+		.free_nodes = INT64_MAX,
 	};
+
+	NineStatfs st;
+	if (fConn.Statfs(fRootVnode->Fid(), st) == B_OK && st.bsize != 0) {
+		info.block_size = st.bsize;
+		info.total_blocks = (off_t)st.blocks;
+		// what an unprivileged user may still use
+		info.free_blocks = (off_t)st.bavail;
+		// a server with no limit on the number of files reports none
+		if (st.files != 0) {
+			info.total_nodes = (off_t)st.files;
+			info.free_nodes = (off_t)st.ffree;
+		}
+	}
+
 	strlcpy(info.volume_name, fVolumeName, sizeof(info.volume_name));
 	return B_OK;
 }
