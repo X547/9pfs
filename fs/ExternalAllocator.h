@@ -77,12 +77,12 @@ private:
 
 	AVLTree<Block::AdrNodeDef> fAdrMap;
 	AVLTree<Block::SizeNodeDef> fSizeMap;
-	uint64_t fTotalSize, fAllocSize;
+	uint64_t fTotalSize = 0, fAllocSize = 0;
 
 public:
 	~ExternalAllocator();
 
-	void Register(uint64_t ptr, uint64_t size);
+	bool Register(uint64_t ptr, uint64_t size);
 
 	[[nodiscard]] bool Alloc(uint64_t &ptr, uint64_t size);
 	[[nodiscard]] bool AllocAligned(uint64_t &ptr, uint64_t size, uint64_t align);

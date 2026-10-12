@@ -46,6 +46,8 @@ static status_t NineErrnoToStatus(uint32 linuxErrno)
 
 NineConnection::NineConnection()
 {
+	// Without memory for it the pool stays empty, and mounting fails at the
+	// first fid.
 	fFidPool.Register(0, 0xfffffffe);
 }
 
@@ -82,8 +84,10 @@ status_t NineConnection::Init(const char *devicePath, uint32 &transportMsize,
 }
 
 
+// The pool is shared by every thread using the volume.
 bool NineConnection::AllocFid(uint32 &fid)
 {
+	MutexLocker locker(&fLock);
 	uint64 value;
 	if (!fFidPool.Alloc(value, 1))
 		return false;
@@ -94,6 +98,7 @@ bool NineConnection::AllocFid(uint32 &fid)
 
 void NineConnection::FreeFid(uint32 fid)
 {
+	MutexLocker locker(&fLock);
 	fFidPool.Free(fid);
 }
 

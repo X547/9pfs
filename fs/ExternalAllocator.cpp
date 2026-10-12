@@ -1,6 +1,7 @@
 #include "ExternalAllocator.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <new>
 
 template <typename T>
 T RoundDown(T a, T b)
@@ -28,12 +29,15 @@ ExternalAllocator::~ExternalAllocator()
 	}
 }
 
-void ExternalAllocator::Register(uint64_t ptr, uint64_t size)
+bool ExternalAllocator::Register(uint64_t ptr, uint64_t size)
 {
-	Block *block = new Block(ptr, size);
+	Block *block = new(std::nothrow) Block(ptr, size);
+	if (block == NULL)
+		return false;
 	fAdrMap.Insert(block);
 	fSizeMap.Insert(block);
 	fTotalSize += size;
+	return true;
 }
 
 bool ExternalAllocator::Alloc(uint64_t &ptr, uint64_t size)
@@ -42,9 +46,16 @@ bool ExternalAllocator::Alloc(uint64_t &ptr, uint64_t size)
 	if (block == NULL)
 		return false;
 
-	fSizeMap.Remove(block);
+	Block *remainingBlock = NULL;
 	if (block->fSize > size) {
-		Block *remainingBlock = new Block(block->fAdr + size, block->fSize - size);
+		remainingBlock = new(std::nothrow) Block(block->fAdr + size,
+			block->fSize - size);
+		if (remainingBlock == NULL)
+			return false;
+	}
+
+	fSizeMap.Remove(block);
+	if (remainingBlock != NULL) {
 		fAdrMap.Insert(remainingBlock);
 		fSizeMap.Insert(remainingBlock);
 		block->fSize = size;
