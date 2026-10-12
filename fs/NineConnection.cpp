@@ -356,9 +356,10 @@ status_t NineConnection::Read(uint32 fid, uint64 offset, uint32 count,
 	NineReader r(&fRecvBuf[0], rlen);
 	CHECK_RET(CheckReply(r, NineType::Rread));
 
+	// more than was asked for would overrun the caller's buffer
 	uint32 replyCount = r.GetU32();
 	const uint8 *data = r.GetData(replyCount);
-	if (!r.Ok())
+	if (!r.Ok() || replyCount > count)
 		return B_IO_ERROR;
 	memcpy(buffer, data, replyCount);
 	outCount = replyCount;
@@ -387,7 +388,7 @@ status_t NineConnection::ReadDir(uint32 fid, uint64 offset, uint32 count,
 
 	uint32 replyCount = r.GetU32();
 	const uint8 *data = r.GetData(replyCount);
-	if (!r.Ok())
+	if (!r.Ok() || replyCount > count)
 		return B_IO_ERROR;
 	memcpy(buffer, data, replyCount);
 	outLength = replyCount;
@@ -611,5 +612,5 @@ status_t NineConnection::Write(uint32 fid, uint64 offset, uint32 count,
 	CHECK_RET(CheckReply(r, NineType::Rwrite));
 
 	outCount = r.GetU32();
-	return r.Ok() ? B_OK : B_IO_ERROR;
+	return r.Ok() && outCount <= count ? B_OK : B_IO_ERROR;
 }
