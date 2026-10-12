@@ -106,6 +106,7 @@ public:
 
 	// Hook so a size change from write_stat (truncate) can resize a file cache.
 	virtual void OnSizeChanged(off_t newSize) {}
+	virtual status_t Fsync() {return B_OK;}
 
 	virtual status_t Lookup(const char *name, ino_t &id);
 	virtual status_t Open(int openMode, NinePFileCookie *&cookie);
@@ -153,6 +154,7 @@ public:
 	status_t Read(NinePFileCookie *cookie, off_t pos, void *buffer, size_t &length) final;
 	status_t Write(NinePFileCookie *cookie, off_t pos, const void *buffer, size_t &length) final;
 	void OnSizeChanged(off_t newSize) final;
+	status_t Fsync() final;
 
 	status_t ReadPages(off_t pos, const struct iovec *vecs, size_t count, size_t &numBytes);
 	status_t WritePages(off_t pos, const struct iovec *vecs, size_t count, size_t &numBytes);
@@ -215,6 +217,8 @@ public:
 	NinePVnode *GetOrCreateVnode(const NineQid &qid, uint32 fid, const char *name);
 	NinePVnode *FindVnode(ino_t id);
 	void RemoveVnode(NinePVnode *vnode);
+	void PutVnode(NinePVnode *vnode);
+	status_t DropStaleVnode(ino_t id, const NineQid &qid);
 
 	static status_t Mount(NinePVolume *&volume, fs_volume *base, const char *device, uint32 flags, const char *args, ino_t &rootVnodeID);
 	status_t Unmount();

@@ -56,6 +56,43 @@ void NinePVolume::RemoveVnode(NinePVnode *vnode)
 }
 
 
+// The VFS no longer uses the vnode. A file or symlink goes, with its fid and
+// file cache, which must not outlive the VFS's vnode. A directory stays: its
+// inode number names it in entry_refs, and 9P cannot find a file by number.
+void NinePVolume::PutVnode(NinePVnode *vnode)
+{
+	if (NineTypeToStatType(vnode->Qid().type) == S_IFDIR)
+		return;
+	RemoveVnode(vnode);
+}
+
+
+// Whether the vnode known by an inode number is still what the server now has
+// there. When the host has put an entry of another kind in its place, the old
+// vnode is unpublished, so a new one can take the number.
+status_t NinePVolume::DropStaleVnode(ino_t id, const NineQid &qid)
+{
+	{
+		RecursiveLocker lock(Lock());
+		NinePVnode *vnode = fIds.Find(id);
+		if (vnode == nullptr
+			|| NineTypeToStatType(vnode->Qid().type)
+				== NineTypeToStatType(qid.type)) {
+			return B_OK;
+		}
+	}
+
+	if (get_vnode(Base(), id, NULL) == B_OK) {
+		remove_vnode(Base(), id);
+		put_vnode(Base(), id);
+	}
+
+	// still in use, so it cannot be replaced yet
+	RecursiveLocker lock(Lock());
+	return fIds.Find(id) == nullptr ? B_OK : B_BUSY;
+}
+
+
 //#pragma mark - NinePVolume
 
 status_t NinePVolume::Mount(NinePVolume *&volume, fs_volume *base,

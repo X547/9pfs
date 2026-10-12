@@ -49,6 +49,13 @@ status_t NinePDirVnode::Lookup(const char *name, ino_t &id)
 
 	id = (ino_t)qid.path;
 
+	status = Volume()->DropStaleVnode(id, qid);
+	if (status < B_OK) {
+		Conn().Clunk(newFid);
+		Conn().FreeFid(newFid);
+		return status;
+	}
+
 	{
 		RecursiveLocker lock(Volume()->Lock());
 		NinePVnode *existing = Volume()->FindVnode(id);
@@ -248,6 +255,12 @@ status_t NinePDirVnode::Create(const char *name, int openMode, int perms,
 		}
 
 		ino_t id = (ino_t)qid.path;
+		status_t status = Volume()->DropStaleVnode(id, qid);
+		if (status < B_OK) {
+			Conn().Clunk(probeFid);
+			Conn().FreeFid(probeFid);
+			return status;
+		}
 		NinePVnode *vnode;
 		{
 			RecursiveLocker lock(Volume()->Lock());
@@ -266,7 +279,7 @@ status_t NinePDirVnode::Create(const char *name, int openMode, int perms,
 			}
 		}
 		CHECK_RET(get_vnode(Volume()->Base(), id, NULL));
-		status_t status = vnode->Open(openMode, cookie);
+		status = vnode->Open(openMode, cookie);
 		if (status < B_OK) {
 			put_vnode(Volume()->Base(), id);
 			return status;
@@ -318,6 +331,14 @@ status_t NinePDirVnode::Create(const char *name, int openMode, int perms,
 	}
 
 	newVnodeID = (ino_t)newQid.path;
+	status = Volume()->DropStaleVnode(newVnodeID, vnodeQid);
+	if (status < B_OK) {
+		Conn().Clunk(vnodeFid);
+		Conn().FreeFid(vnodeFid);
+		Conn().Clunk(createFid);
+		Conn().FreeFid(createFid);
+		return status;
+	}
 	{
 		RecursiveLocker lock(Volume()->Lock());
 		if (Volume()->FindVnode(newVnodeID) != nullptr) {

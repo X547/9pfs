@@ -25,8 +25,8 @@ static fs_vnode_ops sVnodeOps = {
 		return static_cast<NinePVnode*>(vnode->private_node)->GetVnodeName(buffer, bufferSize);
 	},
 	.put_vnode = [](fs_volume *volume, fs_vnode *vnode, bool reenter) {
-		// The vnode object is owned by the volume's id map and kept alive (with
-		// its 9P fid) until remove_vnode or unmount, so nothing to free here.
+		static_cast<NinePVolume*>(volume->private_volume)->PutVnode(
+			static_cast<NinePVnode*>(vnode->private_node));
 		return (status_t)B_OK;
 	},
 	.remove_vnode = [](fs_volume *volume, fs_vnode *vnode, bool reenter) {
@@ -40,6 +40,9 @@ static fs_vnode_ops sVnodeOps = {
 	},
 	.write_pages = [](fs_volume *volume, fs_vnode *vnode, void *cookie, off_t pos, const struct iovec *vecs, size_t count, size_t *numBytes) {
 		return static_cast<NinePFileVnode*>(vnode->private_node)->WritePages(pos, vecs, count, *numBytes);
+	},
+	.fsync = [](fs_volume *volume, fs_vnode *vnode, bool dataOnly) {
+		return static_cast<NinePVnode*>(vnode->private_node)->Fsync();
 	},
 
 	.read_symlink = [](fs_volume *volume, fs_vnode *link, char *buffer, size_t *bufferSize) {

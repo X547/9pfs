@@ -21,8 +21,8 @@ static const uint32 kWriteOverhead = 23;
 
 NinePFileVnode::~NinePFileVnode()
 {
-	// Delete the cache first so any dirty pages flush through WritePages while
-	// the cache fid is still open.
+	// The VFS has written dirty pages back through Fsync() before letting go
+	// of a vnode that still exists; the cache goes before its fid.
 	if (fFileCache != nullptr)
 		file_cache_delete(fFileCache);
 	if (fCacheFid != kNineNoFid) {
@@ -216,6 +216,14 @@ status_t NinePFileVnode::Write(NinePFileCookie *cookie, off_t pos, const void *b
 	}
 
 	return file_cache_write(fFileCache, pos, buffer, &length);
+}
+
+
+status_t NinePFileVnode::Fsync()
+{
+	if (fFileCache == nullptr)
+		return B_OK;
+	return file_cache_sync(fFileCache);
 }
 
 
