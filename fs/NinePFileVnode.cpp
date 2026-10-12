@@ -231,11 +231,11 @@ status_t NinePFileVnode::WritePages(off_t pos, const struct iovec *vecs, size_t 
 	// The cache flushes whole pages; write only the portion within the logical
 	// file size so the last partial page isn't zero-padded on the server. pos
 	// advances by the full vec length since vecs map contiguous file offsets.
-	size_t requested = 0;
-	size_t written = 0;
+	// Pages beyond EOF map to nothing on the server and count as written, so
+	// they are not retried as dirty; a short write stops with what is done,
+	// and the rest stays dirty.
+	size_t done = 0;
 	for (size_t i = 0; i < count; i++) {
-		requested += vecs[i].iov_len;
-
 		off_t segStart = pos;
 		pos += (off_t)vecs[i].iov_len;
 
@@ -251,18 +251,22 @@ status_t NinePFileVnode::WritePages(off_t pos, const struct iovec *vecs, size_t 
 		while (left > 0) {
 			uint32 chunk = (uint32)(left < maxChunk ? left : maxChunk);
 			uint32 wrote = 0;
-			CHECK_RET(Conn().Write(fCacheFid, (uint64)wpos, chunk, buffer, wrote));
-			if (wrote == 0)
-				break;
-			written += wrote;
+			status_t status = Conn().Write(fCacheFid, (uint64)wpos, chunk,
+				buffer, wrote);
+			if (status == B_OK && wrote == 0)
+				status = B_IO_ERROR;
+			if (status != B_OK) {
+				numBytes = done;
+				return status;
+			}
+			done += wrote;
 			wpos += wrote;
 			buffer += wrote;
 			left -= wrote;
 		}
+		done += vecs[i].iov_len - writeLen;
 	}
 
-	// Report all requested bytes as handled; pages beyond EOF legitimately map
-	// to nothing on the server and must not be retried as dirty.
-	numBytes = requested;
+	numBytes = done;
 	return B_OK;
 }
