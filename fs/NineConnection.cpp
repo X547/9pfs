@@ -103,6 +103,17 @@ void NineConnection::FreeFid(uint32 fid)
 }
 
 
+// Each request has a tag of its own, so that a reply to another one is never
+// taken for its own.
+uint16 NineConnection::NewTag()
+{
+	uint16 tag = fNextTag++;
+	if (fNextTag == kNineNoTag)
+		fNextTag = 0;
+	return tag;
+}
+
+
 status_t NineConnection::Transceive(size_t tlen, size_t &rlen)
 {
 	NineTransceiveArgs args = {
@@ -115,6 +126,8 @@ status_t NineConnection::Transceive(size_t tlen, size_t &rlen)
 	if (ioctl(fFd, kIoctl9pTransceive, &args, sizeof(args)) < 0)
 		return errno;
 	if (args.rlen < kNineHeaderSize)
+		return B_IO_ERROR;
+	if (fRecvBuf[5] != fSendBuf[5] || fRecvBuf[6] != fSendBuf[6])
 		return B_IO_ERROR;
 	rlen = args.rlen;
 	return B_OK;
@@ -178,7 +191,7 @@ status_t NineConnection::Attach(uint32 fid, const char *uname, const char *aname
 {
 	MutexLocker locker(&fLock);
 
-	NineWriter w(&fSendBuf[0], fMsize, NineType::Tattach, 0);
+	NineWriter w(&fSendBuf[0], fMsize, NineType::Tattach, NewTag());
 	w.PutU32(fid);
 	w.PutU32(kNineNoFid);
 	w.PutString(uname);
@@ -203,7 +216,7 @@ status_t NineConnection::WalkClone(uint32 fid, uint32 newFid)
 {
 	MutexLocker locker(&fLock);
 
-	NineWriter w(&fSendBuf[0], fMsize, NineType::Twalk, 0);
+	NineWriter w(&fSendBuf[0], fMsize, NineType::Twalk, NewTag());
 	w.PutU32(fid);
 	w.PutU32(newFid);
 	w.PutU16(0);
@@ -224,7 +237,7 @@ status_t NineConnection::Walk(uint32 fid, uint32 newFid, const char *name,
 {
 	MutexLocker locker(&fLock);
 
-	NineWriter w(&fSendBuf[0], fMsize, NineType::Twalk, 0);
+	NineWriter w(&fSendBuf[0], fMsize, NineType::Twalk, NewTag());
 	w.PutU32(fid);
 	w.PutU32(newFid);
 	w.PutU16(1);
@@ -251,7 +264,7 @@ status_t NineConnection::GetAttr(uint32 fid, uint64 mask, NineStat &outStat)
 {
 	MutexLocker locker(&fLock);
 
-	NineWriter w(&fSendBuf[0], fMsize, NineType::Tgetattr, 0);
+	NineWriter w(&fSendBuf[0], fMsize, NineType::Tgetattr, NewTag());
 	w.PutU32(fid);
 	w.PutU64(mask);
 	size_t tlen = w.Finish();
@@ -288,7 +301,7 @@ status_t NineConnection::Statfs(uint32 fid, NineStatfs &outStatfs)
 {
 	MutexLocker locker(&fLock);
 
-	NineWriter w(&fSendBuf[0], fMsize, NineType::Tstatfs, 0);
+	NineWriter w(&fSendBuf[0], fMsize, NineType::Tstatfs, NewTag());
 	w.PutU32(fid);
 	size_t tlen = w.Finish();
 	if (tlen == 0)
@@ -318,7 +331,7 @@ status_t NineConnection::Lopen(uint32 fid, uint32 flags, NineQid &outQid,
 {
 	MutexLocker locker(&fLock);
 
-	NineWriter w(&fSendBuf[0], fMsize, NineType::Tlopen, 0);
+	NineWriter w(&fSendBuf[0], fMsize, NineType::Tlopen, NewTag());
 	w.PutU32(fid);
 	w.PutU32(flags);
 	size_t tlen = w.Finish();
@@ -342,7 +355,7 @@ status_t NineConnection::Read(uint32 fid, uint64 offset, uint32 count,
 {
 	MutexLocker locker(&fLock);
 
-	NineWriter w(&fSendBuf[0], fMsize, NineType::Tread, 0);
+	NineWriter w(&fSendBuf[0], fMsize, NineType::Tread, NewTag());
 	w.PutU32(fid);
 	w.PutU64(offset);
 	w.PutU32(count);
@@ -372,7 +385,7 @@ status_t NineConnection::ReadDir(uint32 fid, uint64 offset, uint32 count,
 {
 	MutexLocker locker(&fLock);
 
-	NineWriter w(&fSendBuf[0], fMsize, NineType::Treaddir, 0);
+	NineWriter w(&fSendBuf[0], fMsize, NineType::Treaddir, NewTag());
 	w.PutU32(fid);
 	w.PutU64(offset);
 	w.PutU32(count);
@@ -400,7 +413,7 @@ status_t NineConnection::ReadLink(uint32 fid, char *buffer, size_t bufferSize)
 {
 	MutexLocker locker(&fLock);
 
-	NineWriter w(&fSendBuf[0], fMsize, NineType::Treadlink, 0);
+	NineWriter w(&fSendBuf[0], fMsize, NineType::Treadlink, NewTag());
 	w.PutU32(fid);
 	size_t tlen = w.Finish();
 	if (tlen == 0)
@@ -427,7 +440,7 @@ status_t NineConnection::Clunk(uint32 fid)
 {
 	MutexLocker locker(&fLock);
 
-	NineWriter w(&fSendBuf[0], fMsize, NineType::Tclunk, 0);
+	NineWriter w(&fSendBuf[0], fMsize, NineType::Tclunk, NewTag());
 	w.PutU32(fid);
 	size_t tlen = w.Finish();
 	if (tlen == 0)
@@ -448,7 +461,7 @@ status_t NineConnection::Lcreate(uint32 fid, const char *name, uint32 flags,
 {
 	MutexLocker locker(&fLock);
 
-	NineWriter w(&fSendBuf[0], fMsize, NineType::Tlcreate, 0);
+	NineWriter w(&fSendBuf[0], fMsize, NineType::Tlcreate, NewTag());
 	w.PutU32(fid);
 	w.PutString(name);
 	w.PutU32(flags);
@@ -475,7 +488,7 @@ status_t NineConnection::Mkdir(uint32 dirFid, const char *name, uint32 mode,
 {
 	MutexLocker locker(&fLock);
 
-	NineWriter w(&fSendBuf[0], fMsize, NineType::Tmkdir, 0);
+	NineWriter w(&fSendBuf[0], fMsize, NineType::Tmkdir, NewTag());
 	w.PutU32(dirFid);
 	w.PutString(name);
 	w.PutU32(mode);
@@ -500,7 +513,7 @@ status_t NineConnection::Symlink(uint32 dirFid, const char *name,
 {
 	MutexLocker locker(&fLock);
 
-	NineWriter w(&fSendBuf[0], fMsize, NineType::Tsymlink, 0);
+	NineWriter w(&fSendBuf[0], fMsize, NineType::Tsymlink, NewTag());
 	w.PutU32(dirFid);
 	w.PutString(name);
 	w.PutString(target);
@@ -524,7 +537,7 @@ status_t NineConnection::UnlinkAt(uint32 dirFid, const char *name, uint32 flags)
 {
 	MutexLocker locker(&fLock);
 
-	NineWriter w(&fSendBuf[0], fMsize, NineType::Tunlinkat, 0);
+	NineWriter w(&fSendBuf[0], fMsize, NineType::Tunlinkat, NewTag());
 	w.PutU32(dirFid);
 	w.PutString(name);
 	w.PutU32(flags);
@@ -545,7 +558,7 @@ status_t NineConnection::RenameAt(uint32 oldDirFid, const char *oldName,
 {
 	MutexLocker locker(&fLock);
 
-	NineWriter w(&fSendBuf[0], fMsize, NineType::Trenameat, 0);
+	NineWriter w(&fSendBuf[0], fMsize, NineType::Trenameat, NewTag());
 	w.PutU32(oldDirFid);
 	w.PutString(oldName);
 	w.PutU32(newDirFid);
@@ -568,7 +581,7 @@ status_t NineConnection::SetAttr(uint32 fid, uint32 valid, uint32 mode,
 {
 	MutexLocker locker(&fLock);
 
-	NineWriter w(&fSendBuf[0], fMsize, NineType::Tsetattr, 0);
+	NineWriter w(&fSendBuf[0], fMsize, NineType::Tsetattr, NewTag());
 	w.PutU32(fid);
 	w.PutU32(valid);
 	w.PutU32(mode);
@@ -596,7 +609,7 @@ status_t NineConnection::Write(uint32 fid, uint64 offset, uint32 count,
 {
 	MutexLocker locker(&fLock);
 
-	NineWriter w(&fSendBuf[0], fMsize, NineType::Twrite, 0);
+	NineWriter w(&fSendBuf[0], fMsize, NineType::Twrite, NewTag());
 	w.PutU32(fid);
 	w.PutU64(offset);
 	w.PutU32(count);

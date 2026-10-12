@@ -24,6 +24,9 @@ private:
 
 	mutex fLock = MUTEX_INITIALIZER("9p connection");
 	ExternalAllocator fFidPool;
+	uint16 fNextTag = 0;
+
+	uint16 NewTag();
 
 	// Serialized transceive: send fSendBuf[0..tlen), receive into fRecvBuf.
 	status_t Transceive(size_t tlen, size_t &rlen);
