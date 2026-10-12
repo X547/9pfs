@@ -32,6 +32,7 @@ class NinePVnode;
 struct NinePFileCookie {
 	uint32 openFid = kNineNoFid;
 	uint32 iounit = 0;
+	int openMode = 0;
 };
 
 

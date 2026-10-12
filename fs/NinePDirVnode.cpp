@@ -348,6 +348,7 @@ status_t NinePDirVnode::Create(const char *name, int openMode, int perms,
 	}
 	cookie->openFid = createFid;
 	cookie->iounit = iounit;
+	cookie->openMode = openMode;
 
 	notify_entry_created(Volume()->Id(), Id(), name, newVnodeID);
 	return B_OK;

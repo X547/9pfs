@@ -116,6 +116,12 @@ status_t NinePFileVnode::Open(int openMode, NinePFileCookie *&cookie)
 	}
 	cookie->openFid = openFid;
 	cookie->iounit = iounit;
+	cookie->openMode = openMode;
+
+	// The server has emptied the file; the cache must not keep, or write back,
+	// what it held of it.
+	if ((openMode & O_TRUNC) != 0)
+		OnSizeChanged(0);
 
 	// A failure to set up the cache here is not fatal to opening; cached I/O
 	// falls back lazily on the next access.
@@ -159,6 +165,9 @@ status_t NinePFileVnode::Write(NinePFileCookie *cookie, off_t pos, const void *b
 
 	{
 		RecursiveLocker lock(Volume()->Lock());
+		// The VFS leaves O_APPEND to the file system.
+		if (cookie != nullptr && (cookie->openMode & O_APPEND) != 0)
+			pos = fCacheSize;
 		if (pos + (off_t)length > fCacheSize) {
 			fCacheSize = pos + (off_t)length;
 			file_cache_set_size(fFileCache, fCacheSize);
