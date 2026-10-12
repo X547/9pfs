@@ -109,6 +109,10 @@ status_t NinePVolume::Mount(NinePVolume *&volume, fs_volume *base,
 
 status_t NinePVolume::Unmount()
 {
+	// The VFS frees every vnode but the root, which keeps the reference
+	// Mount() took.
+	put_vnode(Base(), fRootVnode->Id());
+
 	{
 		RecursiveLocker lock(Lock());
 		for (;;) {
