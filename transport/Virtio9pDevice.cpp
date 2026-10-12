@@ -207,8 +207,15 @@ status_t Virtio9pDevice::InitDevice()
 
 void Virtio9pDevice::UninitDevice()
 {
-	if (fVirtio != nullptr && fVirtioDevice != nullptr)
+	// Freeing the queues resets the device, so that the queues the next
+	// InitDevice() sets up start where the device does.
+	if (fVirtio != nullptr && fVirtioDevice != nullptr) {
 		fVirtio->free_interrupts(fVirtioDevice);
+		fVirtio->free_queues(fVirtioDevice);
+	}
+	fRequestQueue = nullptr;
+	// a request the device still held went with the reset
+	atomic_set(&fInFlight, 0);
 }
 
 
