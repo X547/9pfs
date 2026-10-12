@@ -39,8 +39,10 @@ status_t NinePFileVnode::EnsureCache()
 		return B_OK;
 
 	NineStat stat;
-	CHECK_RET(Conn().GetAttr(Fid(), kNineGetattrSize, stat));
+	CHECK_RET(Conn().GetAttr(Fid(), kNineGetattrSize | kNineGetattrMtime, stat));
 	fCacheSize = (off_t)stat.size;
+	fCacheMtimeSec = stat.mtimeSec;
+	fCacheMtimeNsec = stat.mtimeNsec;
 
 	// Open a dedicated fid for page I/O. Page cache reads/writes can happen
 	// without an open cookie (page faults, writeback), so the vnode needs its
@@ -123,6 +125,14 @@ status_t NinePFileVnode::Open(int openMode, NinePFileCookie *&cookie)
 	if ((openMode & O_TRUNC) != 0)
 		OnSizeChanged(0);
 
+	bool first;
+	{
+		RecursiveLocker lock(Volume()->Lock());
+		first = fOpenCount++ == 0;
+	}
+	if (first && fFileCache != nullptr)
+		Revalidate();
+
 	// A failure to set up the cache here is not fatal to opening; cached I/O
 	// falls back lazily on the next access.
 	EnsureCache();
@@ -130,8 +140,39 @@ status_t NinePFileVnode::Open(int openMode, NinePFileCookie *&cookie)
 }
 
 
+// Close-to-open consistency, as NFS has it: a file opened while nobody has it
+// open shows what was changed on the host since. Changes made here reach the
+// server first, so only clean pages are dropped.
+status_t NinePFileVnode::Revalidate()
+{
+	file_cache_sync(fFileCache);
+
+	NineStat stat;
+	CHECK_RET(Conn().GetAttr(Fid(), kNineGetattrSize | kNineGetattrMtime, stat));
+
+	RecursiveLocker lock(Volume()->Lock());
+	if ((off_t)stat.size == fCacheSize && stat.mtimeSec == fCacheMtimeSec
+		&& stat.mtimeNsec == fCacheMtimeNsec) {
+		return B_OK;
+	}
+	// shrinking the cache to nothing frees every page it holds
+	file_cache_set_size(fFileCache, 0);
+	fCacheSize = (off_t)stat.size;
+	file_cache_set_size(fFileCache, fCacheSize);
+	fCacheMtimeSec = stat.mtimeSec;
+	fCacheMtimeNsec = stat.mtimeNsec;
+	return B_OK;
+}
+
+
 status_t NinePFileVnode::Close(NinePFileCookie *cookie)
 {
+	{
+		// a file just created is open without having gone through Open()
+		RecursiveLocker lock(Volume()->Lock());
+		if (fOpenCount > 0)
+			fOpenCount--;
+	}
 	if (fFileCache != nullptr)
 		file_cache_sync(fFileCache);
 	if (cookie->openFid != kNineNoFid) {
