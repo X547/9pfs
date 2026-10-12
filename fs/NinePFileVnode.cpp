@@ -148,7 +148,7 @@ status_t NinePFileVnode::Read(NinePFileCookie *cookie, off_t pos, void *buffer,
 	size_t &length)
 {
 	CHECK_RET(EnsureCache());
-	return file_cache_read(fFileCache, cookie, pos, buffer, &length);
+	return file_cache_read(fFileCache, pos, buffer, &length);
 }
 
 
@@ -165,7 +165,7 @@ status_t NinePFileVnode::Write(NinePFileCookie *cookie, off_t pos, const void *b
 		}
 	}
 
-	return file_cache_write(fFileCache, cookie, pos, buffer, &length);
+	return file_cache_write(fFileCache, pos, buffer, &length);
 }
 
 
