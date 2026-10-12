@@ -37,6 +37,9 @@ private:
 	mutex fRequestLock = MUTEX_INITIALIZER("virtio_9p request");
 	ConditionVariable fInterruptCondition;
 	int32 fCurrentRequest = 0;
+	// set while the device holds the buffer, which a request given up on
+	// does until the device returns it
+	int32 fInFlight = 0;
 	uint32 fReplyLength = 0;
 	bool fReplyReady = false;
 

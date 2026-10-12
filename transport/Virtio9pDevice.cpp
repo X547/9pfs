@@ -26,6 +26,8 @@ extern device_manager_info *gDeviceManager;
 // side of an exchange is a single virtqueue descriptor.
 static const uint32 kMsize = 8192;
 
+static const bigtime_t kReplyTimeout = 10 * 1000 * 1000;
+
 
 static const char *
 get_feature_name(uint64 feature)
@@ -61,8 +63,9 @@ void Virtio9pDevice::HandleQueueInterrupt()
 		if ((int32)(addr_t)cookie == atomic_get(&fCurrentRequest)) {
 			fReplyLength = usedLength;
 			fReplyReady = true;
-			fInterruptCondition.NotifyAll();
 		}
+		atomic_set(&fInFlight, 0);
+		fInterruptCondition.NotifyAll();
 	}
 }
 
@@ -227,6 +230,17 @@ status_t Virtio9pDevice::Transceive(const void *tbuf, size_t tlen, void *rbuf,
 
 	MutexLocker locker(&fRequestLock);
 
+	// Until the device returns a request given up on, the buffer is its own;
+	// writing the next request there would mix the two.
+	if (atomic_get(&fInFlight) != 0) {
+		ConditionVariableEntry entry;
+		fInterruptCondition.Add(&entry);
+		if (atomic_get(&fInFlight) != 0)
+			entry.Wait(B_RELATIVE_TIMEOUT, kReplyTimeout);
+		if (atomic_get(&fInFlight) != 0)
+			return B_BUSY;
+	}
+
 	memcpy(fBufferAddr, tbuf, tlen);
 
 	physical_entry entries[2];
@@ -242,14 +256,17 @@ status_t Virtio9pDevice::Transceive(const void *tbuf, size_t tlen, void *rbuf,
 	ConditionVariableEntry conditionEntry;
 	fInterruptCondition.Add(&conditionEntry);
 
+	atomic_set(&fInFlight, 1);
 	status_t status = fVirtio->queue_request_v(fRequestQueue, entries, 1, 1,
 		(void*)(addr_t)request);
-	if (status != B_OK)
+	if (status != B_OK) {
+		atomic_set(&fInFlight, 0);
 		return status;
+	}
 
-	status = conditionEntry.Wait(B_RELATIVE_TIMEOUT, 10 * 1000 * 1000);
-	if (status != B_OK || !fReplyReady)
-		return B_IO_ERROR;
+	status = conditionEntry.Wait(B_RELATIVE_TIMEOUT, kReplyTimeout);
+	if (!fReplyReady)
+		return status == B_TIMED_OUT ? B_TIMED_OUT : B_IO_ERROR;
 
 	uint32 usedLength = fReplyLength;
 	if (usedLength > rcap)
