@@ -77,6 +77,7 @@ status_t NinePFileVnode::EnsureCache()
 		}
 	}
 	fCacheFid = fid;
+	fCacheIounit = iounit;
 
 	fFileCache = file_cache_create(Volume()->Id(), Id(), fCacheSize);
 	if (fFileCache == nullptr) {
@@ -236,10 +237,20 @@ void NinePFileVnode::OnSizeChanged(off_t newSize)
 }
 
 
+// The data a message can carry; a server may take no more than its I/O unit.
+uint32 NinePFileVnode::MaxChunk(uint32 overhead) const
+{
+	uint32 chunk = Conn().Msize() - overhead;
+	if (fCacheIounit != 0 && fCacheIounit < chunk)
+		chunk = fCacheIounit;
+	return chunk;
+}
+
+
 status_t NinePFileVnode::ReadPages(off_t pos, const struct iovec *vecs, size_t count,
 	size_t &numBytes)
 {
-	uint32 maxChunk = Conn().Msize() - kReadOverhead;
+	uint32 maxChunk = MaxChunk(kReadOverhead);
 
 	size_t total = 0;
 	bool eof = false;
@@ -269,7 +280,7 @@ status_t NinePFileVnode::ReadPages(off_t pos, const struct iovec *vecs, size_t c
 status_t NinePFileVnode::WritePages(off_t pos, const struct iovec *vecs, size_t count,
 	size_t &numBytes)
 {
-	uint32 maxChunk = Conn().Msize() - kWriteOverhead;
+	uint32 maxChunk = MaxChunk(kWriteOverhead);
 
 	off_t size;
 	{

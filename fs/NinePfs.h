@@ -133,6 +133,7 @@ class NinePFileVnode: public NinePVnode {
 private:
 	void *fFileCache = nullptr;
 	uint32 fCacheFid = kNineNoFid;
+	uint32 fCacheIounit = 0;
 	off_t fCacheSize = 0;
 	// the server's modification time when the cache last matched it
 	int64 fCacheMtimeSec = 0;
@@ -143,6 +144,7 @@ private:
 	// so mmap and executable loading work. Safe to call repeatedly.
 	status_t EnsureCache();
 	status_t Revalidate();
+	uint32 MaxChunk(uint32 overhead) const;
 
 public:
 	using NinePVnode::NinePVnode;
