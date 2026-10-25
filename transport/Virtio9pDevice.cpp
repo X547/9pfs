@@ -165,8 +165,10 @@ status_t Virtio9pDevice::InitDevice()
 		(void**)&fVirtioDevice);
 	gDeviceManager->put_node(parent);
 
-	fVirtio->negotiate_features(fVirtioDevice,
-		kVirtio9pFeatureMountTag | VIRTIO_FEATURE_RING_INDIRECT_DESC,
+	// No indirect descriptors: a request is only two, and the bus manager
+	// does not tell a virtio 1.0 PCI device what was accepted, so the device
+	// may refuse them.
+	fVirtio->negotiate_features(fVirtioDevice, kVirtio9pFeatureMountTag,
 		&fFeatures, &get_feature_name);
 
 	if ((fFeatures & kVirtio9pFeatureMountTag) != 0) {
