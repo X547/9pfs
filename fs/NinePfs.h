@@ -139,6 +139,8 @@ private:
 	int64 fCacheMtimeSec = 0;
 	int64 fCacheMtimeNsec = 0;
 	int32 fOpenCount = 0;
+	// a page writeback the server failed, for the next fsync to report
+	status_t fWriteError = B_OK;
 
 	// Lazily creates the page cache and a dedicated opened fid for page I/O,
 	// so mmap and executable loading work. Safe to call repeatedly.

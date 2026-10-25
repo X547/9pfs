@@ -224,7 +224,13 @@ status_t NinePFileVnode::Fsync()
 {
 	if (fFileCache == nullptr)
 		return B_OK;
-	return file_cache_sync(fFileCache);
+	CHECK_RET(file_cache_sync(fFileCache));
+
+	// The cache does not pass on what its page writes returned.
+	RecursiveLocker lock(Volume()->Lock());
+	status_t status = fWriteError;
+	fWriteError = B_OK;
+	return status;
 }
 
 
@@ -316,6 +322,8 @@ status_t NinePFileVnode::WritePages(off_t pos, const struct iovec *vecs, size_t 
 			if (status == B_OK && wrote == 0)
 				status = B_IO_ERROR;
 			if (status != B_OK) {
+				RecursiveLocker lock(Volume()->Lock());
+				fWriteError = status;
 				numBytes = done;
 				return status;
 			}
